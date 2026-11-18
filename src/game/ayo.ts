@@ -42,29 +42,45 @@ export function sowFrames(state: State, pit: number): { frames: number[][]; last
   return { frames, last: i };
 }
 
-/** Apply a move: sow, then capture 2s and 3s backwards on the opponent's side. */
-export function applyMove(state: State, pit: number): State {
+export interface MoveResult {
+  next: State;
+  /** Pits whose seeds were captured (empty when nothing was taken). */
+  captured: number[];
+  taken: number;
+  /** Where the last seed landed. */
+  last: number;
+}
+
+/** Sow, then capture 2s and 3s backwards on the opponent's side. */
+export function playMove(state: State, pit: number): MoveResult {
   const me = state.turn;
   const { frames, last } = sowFrames(state, pit);
   const pits = [...frames[frames.length - 1]];
   const stores: [number, number] = [...state.stores];
 
-  const captured: number[] = [];
+  const chain: number[] = [];
   let i = last;
   while (!isOwn(me, i) && (pits[i] === 2 || pits[i] === 3)) {
-    captured.push(i);
+    chain.push(i);
     i = (i + 11) % 12;
   }
-  const take = captured.reduce((s, k) => s + pits[k], 0);
+  const take = chain.reduce((s, k) => s + pits[k], 0);
   // Grand slam: capturing every opponent seed is not allowed — the move stands but captures nothing.
   const capturing = take > 0 && take < sideTotal(pits, other(me));
   if (capturing) {
-    for (const k of captured) pits[k] = 0;
+    for (const k of chain) pits[k] = 0;
     stores[me] += take;
   }
 
-  return { pits, stores, turn: other(me), sinceCapture: capturing ? 0 : state.sinceCapture + 1 };
+  return {
+    next: { pits, stores, turn: other(me), sinceCapture: capturing ? 0 : state.sinceCapture + 1 },
+    captured: capturing ? chain : [],
+    taken: capturing ? take : 0,
+    last,
+  };
 }
+
+export const applyMove = (state: State, pit: number): State => playMove(state, pit).next;
 
 /** Legal moves, enforcing the "must feed an empty opponent" rule. */
 export function legalMoves(state: State): number[] {

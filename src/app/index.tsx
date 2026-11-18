@@ -1,185 +1,125 @@
-import * as Haptics from 'expo-haptics';
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { router } from 'expo-router';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Body, Button, Card, H1, Label, Pill, Row, Screen } from '@/components/ui';
-import { applyMove, bestMove, initialState, legalMoves, outcome, sowFrames, type Difficulty, type State } from '@/game/ayo';
-import { useStoredState } from '@/lib/storage';
-import { usePalette } from '@/theme';
+import { totals, useRecords } from '@/data/record';
+import type { Difficulty } from '@/game/ayo';
+import { Board } from '@/game/board';
+import { arena } from '@/game/look';
 
 type Mode = 'ai' | 'friend';
-const STEP_MS = 140;
+const levels: { id: Difficulty; label: string; blurb: string }[] = [
+  { id: 'easy', label: 'Easy', blurb: 'Relaxed, makes mistakes' },
+  { id: 'medium', label: 'Medium', blurb: 'Thinks 4 moves ahead' },
+  { id: 'hard', label: 'Hard', blurb: 'Thinks 7 moves ahead' },
+];
+const PREVIEW = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4];
 
-const WOOD = '#7C2D12';
-const PIT = '#431407';
-const SEED = '#FDE68A';
-
-/** Seeds drawn as dots (up to 12), then a number. */
-function Seeds({ n }: { n: number }) {
-  const dots = Math.min(n, 12);
+function Choice({ on, onPress, title, sub, icon }: { on: boolean; onPress: () => void; title: string; sub: string; icon: keyof typeof Ionicons.glyphMap }) {
   return (
-    <View style={styles.seedWrap}>
-      {Array.from({ length: dots }, (_, i) => (
-        <View key={i} style={styles.seed} />
-      ))}
-      {n > 12 ? <Text style={styles.seedMore}>+{n - 12}</Text> : null}
-    </View>
+    <Pressable accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={title} onPress={onPress} style={[styles.choice, on && styles.choiceOn]}>
+      <Ionicons name={icon} size={22} color={on ? arena.gold : arena.subtle} />
+      <Text style={[styles.choiceTitle, on && { color: arena.text }]}>{title}</Text>
+      <Text style={styles.choiceSub}>{sub}</Text>
+    </Pressable>
   );
 }
 
-export default function AyoArena() {
-  const c = usePalette();
+export default function Menu() {
   const [mode, setMode] = useState<Mode>('ai');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
-  const [state, setState] = useState<State | null>(null);
-  const [display, setDisplay] = useState<number[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [lastPit, setLastPit] = useState<number | null>(null);
-  const [record, setRecord] = useStoredState('record', { wins: 0, losses: 0, draws: 0 });
-  const recorded = useRef(false);
-
-  const result = state ? outcome(state) : null;
-  const shown = result?.over ? result.final : state;
-
-  /** Animate sowing seed by seed, then commit the move. */
-  const play = (pit: number) => {
-    if (!state || busy) return;
-    setBusy(true);
-    setLastPit(pit);
-    Haptics.selectionAsync().catch(() => {});
-    const { frames } = sowFrames(state, pit);
-    let k = 0;
-    const t = setInterval(() => {
-      k++;
-      if (k < frames.length) {
-        setDisplay(frames[k]);
-        return;
-      }
-      clearInterval(t);
-      const next = applyMove(state, pit);
-      if (next.stores[state.turn] > state.stores[state.turn]) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      setDisplay(null);
-      setState(next);
-      setBusy(false);
-    }, STEP_MS);
-    setDisplay(frames[0]);
-  };
-
-  // AI turn
-  useEffect(() => {
-    if (!state || mode !== 'ai' || state.turn !== 1 || busy || outcome(state).over) return;
-    const t = setTimeout(() => play(bestMove(state, difficulty)), 500);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, mode, busy, difficulty]);
-
-  // Record result once per game (vs AI only)
-  useEffect(() => {
-    if (!result?.over || mode !== 'ai' || recorded.current) return;
-    recorded.current = true;
-    setRecord((r) => ({
-      wins: r.wins + (result.winner === 0 ? 1 : 0),
-      losses: r.losses + (result.winner === 1 ? 1 : 0),
-      draws: r.draws + (result.winner === 'draw' ? 1 : 0),
-    }));
-  }, [result?.over, result?.winner, mode, setRecord]);
-
-  const start = () => {
-    recorded.current = false;
-    setDisplay(null);
-    setLastPit(null);
-    setState(initialState());
-  };
-
-  if (!state || !shown) {
-    return (
-      <Screen>
-        <H1>Ayo Arena</H1>
-        <Body muted>The Yorùbá seed-sowing classic. Sow seeds counter-clockwise; capture when your last seed makes 2 or 3 in your opponent&apos;s pit.</Body>
-        <Card>
-          <Label>Play against</Label>
-          <Row>
-            <Pill active={mode === 'ai'} onPress={() => setMode('ai')}>Computer</Pill>
-            <Pill active={mode === 'friend'} onPress={() => setMode('friend')}>A friend</Pill>
-          </Row>
-          {mode === 'ai' ? (
-            <>
-              <Label style={{ marginTop: 8 }}>Difficulty</Label>
-              <Row>
-                {(['easy', 'medium', 'hard'] as const).map((d) => (
-                  <Pill key={d} active={difficulty === d} onPress={() => setDifficulty(d)}>
-                    {d[0].toUpperCase() + d.slice(1)}
-                  </Pill>
-                ))}
-              </Row>
-            </>
-          ) : null}
-        </Card>
-        <Button big title="Start game" onPress={start} />
-        <Body muted style={{ textAlign: 'center' }}>
-          Record vs computer: {record.wins}W · {record.losses}L · {record.draws}D
-        </Body>
-      </Screen>
-    );
-  }
-
-  const pits = display ?? shown.pits;
-  const legal = busy || result?.over ? [] : legalMoves(state);
-  const canTap = (i: number) => legal.includes(i) && (mode === 'friend' || state.turn === 0);
-  const name = (p: 0 | 1) => (mode === 'ai' ? (p === 0 ? 'You' : 'Computer') : `Player ${p + 1}`);
-
-  const pitView = (i: number) => (
-    <Pressable
-      key={i}
-      disabled={!canTap(i)}
-      onPress={() => play(i)}
-      accessibilityLabel={`Pit with ${pits[i]} seeds`}
-      style={[styles.pit, { borderColor: canTap(i) ? '#FBBF24' : lastPit === i ? '#FDBA74' : 'transparent' }]}>
-      <Seeds n={pits[i]} />
-      <Text style={styles.count}>{pits[i]}</Text>
-    </Pressable>
-  );
+  const [records] = useRecords();
+  const all = totals(records);
+  const played = all.wins + all.losses + all.draws;
 
   return (
-    <Screen>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Text style={[styles.player, { color: state.turn === 1 && !result?.over ? c.primary : c.muted }]}>
-          {name(1)} · {shown.stores[1]}
-        </Text>
-        <Text style={{ color: c.subtle }}>{result?.over ? 'Game over' : busy ? 'Sowing…' : `${name(state.turn)} to move`}</Text>
-      </Row>
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.kicker}>AYỌ̀ · OWARE</Text>
+            <Text style={styles.title}>Ayo Arena</Text>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="How to play" onPress={() => router.push('/how-to-play')} style={styles.help}>
+            <Ionicons name="help" size={22} color={arena.text} />
+          </Pressable>
+        </View>
+        <Text style={styles.lede}>The Yorùbá seed-sowing classic. Sow, count ahead, and capture your opponent&apos;s seeds in twos and threes.</Text>
 
-      <View style={styles.board}>
-        <View style={styles.row}>{[11, 10, 9, 8, 7, 6].map(pitView)}</View>
-        <View style={styles.row}>{[0, 1, 2, 3, 4, 5].map(pitView)}</View>
-      </View>
+        <View pointerEvents="none" style={{ marginVertical: 6 }}>
+          <Board pits={PREVIEW} playable={[]} onPlay={() => {}} origin={null} landed={null} captured={[]} hint={null} owner={() => ''} />
+        </View>
 
-      <Text style={[styles.player, { color: state.turn === 0 && !result?.over ? c.primary : c.muted }]}>
-        {name(0)} · {shown.stores[0]}
-      </Text>
+        <Text style={styles.label}>Play against</Text>
+        <View style={styles.row}>
+          <Choice on={mode === 'ai'} onPress={() => setMode('ai')} title="Computer" sub="Practise and climb" icon="hardware-chip-outline" />
+          <Choice on={mode === 'friend'} onPress={() => setMode('friend')} title="A friend" sub="Pass the phone" icon="people-outline" />
+        </View>
 
-      {result?.over ? (
-        <Card>
-          <H1 style={{ fontSize: 26 }}>{result.winner === 'draw' ? "It's a draw." : `${name(result.winner as 0 | 1)} win${mode === 'ai' && result.winner === 0 ? '' : 's'}!`}</H1>
-          <Body muted>
-            Final score {result.final.stores[0]} – {result.final.stores[1]}
-          </Body>
-          <Button title="Play again" onPress={start} />
-        </Card>
-      ) : (
-        <Button title="Quit to menu" variant="secondary" onPress={() => setState(null)} />
-      )}
-    </Screen>
+        {mode === 'ai' ? (
+          <>
+            <Text style={styles.label}>Difficulty</Text>
+            <View style={styles.row}>
+              {levels.map((l) => (
+                <Choice key={l.id} on={difficulty === l.id} onPress={() => setDifficulty(l.id)} title={l.label} sub={l.blurb} icon={l.id === 'easy' ? 'leaf-outline' : l.id === 'medium' ? 'flame-outline' : 'skull-outline'} />
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/game', params: { mode, difficulty } })} style={({ pressed }) => [styles.play, pressed && { transform: [{ scale: 0.98 }] }]}>
+          <Ionicons name="play" size={22} color={arena.table} />
+          <Text style={styles.playText}>Start game</Text>
+        </Pressable>
+
+        <Text style={styles.label}>Your record vs the computer</Text>
+        <View style={styles.stats}>
+          {levels.map((l) => (
+            <View key={l.id} style={styles.stat} accessibilityLabel={`${l.label}: ${records[l.id].wins} wins, ${records[l.id].losses} losses, ${records[l.id].draws} draws`}>
+              <Text style={styles.statLevel}>{l.label}</Text>
+              <Text style={styles.statMain}>
+                {records[l.id].wins}
+                <Text style={styles.statDim}> – {records[l.id].losses}</Text>
+              </Text>
+              <Text style={styles.statSub}>{records[l.id].draws} draws</Text>
+            </View>
+          ))}
+        </View>
+        {played ? (
+          <Text style={styles.foot}>
+            {played} games · win streak {records.streak} · best win by {records.bestMargin}
+          </Text>
+        ) : (
+          <Text style={styles.foot}>Win a game to start your record.</Text>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  board: { backgroundColor: WOOD, borderRadius: 28, padding: 10, gap: 10, borderWidth: 3, borderColor: '#B45309' },
-  row: { flexDirection: 'row', gap: 6 },
-  pit: { flex: 1, aspectRatio: 0.8, borderRadius: 999, backgroundColor: PIT, alignItems: 'center', justifyContent: 'center', borderWidth: 2, padding: 4 },
-  seedWrap: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 2, maxWidth: 40 },
-  seed: { width: 7, height: 7, borderRadius: 4, backgroundColor: SEED },
-  seedMore: { color: SEED, fontSize: 9, fontWeight: '700' },
-  count: { color: '#FED7AA', fontSize: 11, fontWeight: '800', marginTop: 2 },
-  player: { fontSize: 18, fontWeight: '800' },
+  screen: { flex: 1, backgroundColor: arena.table },
+  content: { padding: 18, gap: 14, paddingBottom: 48 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  kicker: { color: arena.gold, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+  title: { color: arena.text, fontSize: 38, fontWeight: '900', letterSpacing: -1 },
+  help: { width: 44, height: 44, borderRadius: 22, backgroundColor: arena.tableHi, alignItems: 'center', justifyContent: 'center' },
+  lede: { color: arena.muted, fontSize: 16, lineHeight: 23 },
+  label: { color: arena.subtle, fontSize: 12, fontWeight: '800', letterSpacing: 1.4, textTransform: 'uppercase', marginTop: 6 },
+  row: { flexDirection: 'row', gap: 10 },
+  choice: { flex: 1, padding: 12, borderRadius: 18, backgroundColor: arena.tableHi, borderWidth: 1.5, borderColor: 'transparent', gap: 4 },
+  choiceOn: { borderColor: arena.gold, backgroundColor: 'rgba(245,184,46,0.10)' },
+  choiceTitle: { color: arena.muted, fontSize: 16, fontWeight: '800' },
+  choiceSub: { color: arena.subtle, fontSize: 12 },
+  play: { flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center', minHeight: 62, borderRadius: 31, backgroundColor: arena.gold, marginTop: 8 },
+  playText: { color: arena.table, fontSize: 20, fontWeight: '900' },
+  stats: { flexDirection: 'row', gap: 10 },
+  stat: { flex: 1, padding: 12, borderRadius: 18, backgroundColor: arena.tableHi, gap: 2 },
+  statLevel: { color: arena.subtle, fontSize: 12, fontWeight: '700' },
+  statMain: { color: arena.text, fontSize: 24, fontWeight: '900' },
+  statDim: { color: arena.subtle, fontSize: 18, fontWeight: '700' },
+  statSub: { color: arena.subtle, fontSize: 12 },
+  foot: { color: arena.subtle, fontSize: 13, textAlign: 'center' },
 });

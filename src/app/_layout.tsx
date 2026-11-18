@@ -1,33 +1,29 @@
-import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
 
 import { brand } from '@/brand';
-import { usePalette } from '@/theme';
+import { arena } from '@/game/look';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+/** The arena is always "night at the board": one warm dark look in any system theme. */
 export default function RootLayout() {
-  const scheme = useColorScheme();
-  const c = usePalette();
-
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
-  const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
   return (
-    <ThemeProvider value={{ ...base, colors: { ...base.colors, primary: c.primary, background: c.bg, card: c.bg, text: c.text, border: c.border } }}>
-      <StatusBar style="auto" />
+    <ThemeProvider value={{ ...DarkTheme, colors: { ...DarkTheme.colors, primary: arena.gold, background: arena.table, card: arena.table, text: arena.text, border: arena.tableHi } }}>
+      <StatusBar style="light" />
       <Stack
         screenOptions={{
           headerShadowVisible: false,
-          headerStyle: { backgroundColor: c.bg },
-          headerTintColor: c.text,
-          headerTitleStyle: { fontWeight: '700' },
-          contentStyle: { backgroundColor: c.bg },
+          headerStyle: { backgroundColor: arena.table },
+          headerTintColor: arena.text,
+          headerTitleStyle: { fontWeight: '800' },
+          contentStyle: { backgroundColor: arena.table },
         }}>
         {brand.screens.map((s) => (
           <Stack.Screen key={s.name} name={s.name} options={{ title: s.title, headerShown: !s.hideHeader, presentation: s.modal ? 'modal' : undefined }} />
